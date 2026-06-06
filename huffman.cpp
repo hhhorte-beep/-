@@ -3,131 +3,254 @@
 #include <unordered_map>
 #include <string>
 #include <vector>
-#include <algorithm>
+#include <tuple>
 
 using namespace std;
 
-// Узел дерева Хаффмана
+// Huffman Tree Node
 struct Node {
     char ch;
     int freq;
-    Node *left, *right;
+    Node* left;
+    Node* right;
 
-    Node(char character, int frequency) : ch(character), freq(frequency), left(nullptr), right(nullptr) {}
-    Node(int frequency, Node* l, Node* r) : ch('\0'), freq(frequency), left(l), right(r) {}
+    Node(char character, int frequency) {
+        ch = character;
+        freq = frequency;
+        left = nullptr;
+        right = nullptr;
+    }
+
+    Node(int frequency, Node* l, Node* r) {
+        ch = '\0';
+        freq = frequency;
+        left = l;
+        right = r;
+    }
 };
 
-// Компаратор для min-heap (приоритетная очередь)
+// Comparator for Min Heap
 struct Compare {
     bool operator()(Node* a, Node* b) {
         return a->freq > b->freq;
     }
 };
 
-// Подсчёт частот символов
+// Build Frequency Table
 unordered_map<char, int> buildFrequencyTable(const string& text) {
     unordered_map<char, int> freqTable;
+
     for (char c : text) {
         freqTable[c]++;
     }
+
     return freqTable;
 }
 
-// Построение дерева Хаффмана
+// Build Huffman Tree
 Node* buildHuffmanTree(const unordered_map<char, int>& freqTable) {
     priority_queue<Node*, vector<Node*>, Compare> minHeap;
 
-    for (const auto& pair : freqTable) {
-        minHeap.push(new Node(pair.first, pair.second));
+    for (auto it = freqTable.begin(); it != freqTable.end(); ++it) {
+        minHeap.push(new Node(it->first, it->second));
     }
 
-    // Особый случай: один символ
-    if (minHeap.size() == 1) {
+    if (minHeap.empty())
+        return nullptr;
+
+    if (minHeap.size() == 1)
         return minHeap.top();
-    }
 
     while (minHeap.size() > 1) {
-        Node* left = minHeap.top(); minHeap.pop();
-        Node* right = minHeap.top(); minHeap.pop();
+        Node* left = minHeap.top();
+        minHeap.pop();
 
-        Node* parent = new Node(left->freq + right->freq, left, right);
+        Node* right = minHeap.top();
+        minHeap.pop();
+
+        Node* parent =
+            new Node(left->freq + right->freq, left, right);
+
         minHeap.push(parent);
     }
 
     return minHeap.top();
 }
 
-// Рекурсивная генерация кодов
-void buildCodes(Node* root, const string& prefix, unordered_map<char, string>& codes) {
-    if (!root) return;
+// Generate Huffman Codes
+void buildCodes(
+    Node* root,
+    string code,
+    unordered_map<char, string>& codes) {
 
-    // Лист
-    if (root->ch != '\0') {
-        // Для дерева из одного узла код "0"
-        codes[root->ch] = prefix.empty() ? "0" : prefix;
+    if (!root)
+        return;
+
+    if (!root->left && !root->right) {
+        if (code.empty())
+            code = "0";
+
+        codes[root->ch] = code;
         return;
     }
 
-    buildCodes(root->left, prefix + "0", codes);
-    buildCodes(root->right, prefix + "1", codes);
+    buildCodes(root->left, code + "0", codes);
+    buildCodes(root->right, code + "1", codes);
 }
 
-// Кодирование
-string encode(const string& text, const unordered_map<char, string>& codes) {
-    string result;
+// Encode Text
+string encode(
+    const string& text,
+    const unordered_map<char, string>& codes) {
+
+    string encoded;
+
     for (char c : text) {
-        result += codes.at(c);
+        encoded += codes.at(c);
     }
-    return result;
+
+    return encoded;
 }
 
-// Декодирование
+// Decode Text
 string decode(const string& encoded, Node* root) {
-    if (encoded.empty() || !root) return "";
 
-    // Особый случай: один символ
+    if (!root)
+        return "";
+
     if (!root->left && !root->right) {
-        return string(encoded.length(), root->ch);
+        return string(encoded.size(), root->ch);
     }
 
     string result;
     Node* current = root;
+
     for (char bit : encoded) {
-        current = (bit == '0') ? current->left : current->right;
-        if (current->ch != '\0') {
-            result.push_back(current->ch);
+
+        if (bit == '0')
+            current = current->left;
+        else
+            current = current->right;
+
+        if (!current->left && !current->right) {
+            result += current->ch;
             current = root;
         }
     }
+
     return result;
 }
 
-// Коэффициент сжатия
-double compressionRatio(const string& original, const string& encoded) {
-    if (original.empty()) return 0.0;
-    return 1.0 - static_cast<double>(encoded.length()) / (original.length() * 8);
+// Compression Ratio
+double compressionRatio(
+    const string& original,
+    const string& encoded) {
+
+    if (original.empty())
+        return 0.0;
+
+    double originalBits =
+        static_cast<double>(original.size()) * 8.0;
+
+    double compressedBits =
+        static_cast<double>(encoded.size());
+
+    return (originalBits - compressedBits) / originalBits;
 }
 
-// Полный цикл сжатия
-tuple<string, Node*, unordered_map<char, string>, double> huffmanCompress(const string& text) {
-    if (text.empty()) {
-        return {"", nullptr, {}, 0.0};
-    }
+// Full Compression Process
+tuple<string, Node*, unordered_map<char, string>, double>
+huffmanCompress(const string& text) {
 
-    auto freq = buildFrequencyTable(text);
-    Node* tree = buildHuffmanTree(freq);
+    auto freqTable = buildFrequencyTable(text);
+
+    Node* tree = buildHuffmanTree(freqTable);
+
     unordered_map<char, string> codes;
-    buildCodes(tree, "", codes);
-    string encoded = encode(text, codes);
-    double ratio = compressionRatio(text, encoded);
 
-    return {encoded, tree, codes, ratio};
+    buildCodes(tree, "", codes);
+
+    string encoded = encode(text, codes);
+
+    double ratio =
+        compressionRatio(text, encoded);
+
+    return make_tuple(
+        encoded,
+        tree,
+        codes,
+        ratio
+    );
 }
 
-// Очистка памяти (обход дерева)
+// Delete Tree
 void deleteTree(Node* root) {
-    if (!root) return;
+
+    if (!root)
+        return;
+
     deleteTree(root->left);
     deleteTree(root->right);
+
     delete root;
+}
+
+// Main Function
+int main() {
+
+    string text;
+
+    cout << "Enter text: ";
+    getline(cin, text);
+
+    if (text.empty()) {
+        cout << "Empty string!" << endl;
+        return 0;
+    }
+
+    auto result = huffmanCompress(text);
+
+    string encoded = get<0>(result);
+    Node* tree = get<1>(result);
+    unordered_map<char, string> codes = get<2>(result);
+    double ratio = get<3>(result);
+
+    cout << "\n===== HUFFMAN CODES =====\n";
+
+    for (auto it = codes.begin(); it != codes.end(); ++it) {
+
+        if (it->first == ' ')
+            cout << "' ' -> ";
+        else
+            cout << it->first << " -> ";
+
+        cout << it->second << endl;
+    }
+
+    cout << "\n===== RESULT =====\n";
+
+    cout << "Original text:\n";
+    cout << text << endl;
+
+    cout << "\nEncoded string:\n";
+    cout << encoded << endl;
+
+    cout << "\nDecoded string:\n";
+    cout << decode(encoded, tree) << endl;
+
+    cout << "\nOriginal size: "
+        << text.size() * 8
+        << " bits" << endl;
+
+    cout << "Compressed size: "
+        << encoded.size()
+        << " bits" << endl;
+
+    cout << "Compression ratio: "
+        << ratio * 100
+        << "%" << endl;
+
+    deleteTree(tree);
+
+    return 0;
 }
